@@ -216,13 +216,21 @@ def is_valid_proxy(proxy_str):
 
 
 def clean_proxy_line(line):
-    """Cleans a proxy line from protocols and extra data"""
+    """Cleans a proxy line from protocols and extra data.
+    Returns a list of valid IP:PORT strings found in the line."""
     # Remove protocols (http://, socks5:// etc.)
     line = re.sub(r'http://|https://|socks4://|socks5://|ftp://|file://', '', line.strip())
-    # If there's more than one colon, take only the first part with IP:PORT
-    if line.count(':') > 1:
-        line = re.sub(r'^(.*?:.*?):.*$', r'\1', line)
-    return line
+    
+    # Find ALL IP:PORT patterns in the line
+    # This handles cases where multiple proxies are concatenated on one line
+    ip_pattern = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}'
+    matches = re.findall(ip_pattern, line)
+    
+    if matches:
+        return matches
+    
+    # If no IP:PORT pattern found, return original cleaned line as single-item list
+    return [line]
 
 
 def get_proxy_type_from_url(url):
@@ -272,11 +280,12 @@ def download_and_process_proxies(urls, output_dir):
                 if not line.strip():
                     continue
                     
-                clean_line = clean_proxy_line(line)
+                clean_lines = clean_proxy_line(line)
                 
                 # Optional: format check
-                if is_valid_proxy(clean_line):
-                    processed_lines.append(clean_line)
+                for clean_line in clean_lines:
+                    if is_valid_proxy(clean_line):
+                        processed_lines.append(clean_line)
             
             # Write to file
             if processed_lines:
@@ -360,9 +369,10 @@ def download_and_process_mixed_proxy_lists(urls_mixed, output_dir):
                     proxy_type = 'http'
                     clean_line = line
                 
-                clean_line = clean_proxy_line(clean_line)
-                if clean_line and is_valid_proxy(clean_line):
-                    proxy_by_type[proxy_type].append(clean_line)
+                clean_lines = clean_proxy_line(clean_line)
+                for clean_line in clean_lines:
+                    if clean_line and is_valid_proxy(clean_line):
+                        proxy_by_type[proxy_type].append(clean_line)
                     
             successful += 1
                 
@@ -591,9 +601,10 @@ def download_proxies_by_protocol(urls_by_protocol, output_dir):
                 response.raise_for_status()
                 lines = []
                 for line in response.text.splitlines():
-                    clean_line = clean_proxy_line(line)
-                    if is_valid_proxy(clean_line):
-                        lines.append(clean_line)
+                    clean_lines = clean_proxy_line(line)
+                    for clean_line in clean_lines:
+                        if is_valid_proxy(clean_line):
+                            lines.append(clean_line)
                 if lines:
                     with open(file_path, 'a') as f:
                         f.write('\n'.join(lines) + '\n')

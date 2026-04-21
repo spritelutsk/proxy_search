@@ -1,11 +1,6 @@
 {
   "http": [
     {
-      "url": "https://raw.githubusercontent.com/gitrecon1455/fresh-proxy-list/refs/heads/main/proxylist.txt",
-      "timestamp": "2025-06-13 09:16:54",
-      "status": "active"
-    },
-    {
       "url": "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
       "timestamp": "2025-06-13 09:16:54",
       "status": "active"
@@ -151,11 +146,6 @@
       "status": "active"
     },
     {
-      "url": "https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt",
-      "timestamp": "2026-04-09 14:40:00",
-      "status": "active"
-    },
-    {
       "url": "https://raw.githubusercontent.com/prxchk/proxy-list/main/http.txt",
       "timestamp": "2026-04-09 15:05:00",
       "status": "active"
@@ -164,14 +154,24 @@
       "url": "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all",
       "timestamp": "2026-04-09 15:05:00",
       "status": "active"
+    },
+    {
+      "url": "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&protocol=http",
+      "timestamp": "2026-04-21 00:00:00",
+      "status": "active"
+    },
+    {
+      "url": "https://www.proxy-list.download/api/v1/get?type=http",
+      "timestamp": "2026-04-21 00:00:00",
+      "status": "active"
+    },
+    {
+      "url": "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/http/data.txt",
+      "timestamp": "2026-04-21 00:00:00",
+      "status": "active"
     }
   ],
   "https": [
-    {
-      "url": "https://raw.githubusercontent.com/gitrecon1455/fresh-proxy-list/refs/heads/main/proxylist.txt",
-      "timestamp": "2025-06-13 10:00:44",
-      "status": "active"
-    },
     {
       "url": "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/https.txt",
       "timestamp": "2025-06-13 10:00:44",
@@ -179,16 +179,6 @@
     },
     {
       "url": "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/https.txt",
-      "timestamp": "2025-06-13 10:00:44",
-      "status": "active"
-    },
-    {
-      "url": "https://raw.githubusercontent.com/dpangestuw/Free-Proxy/refs/heads/main/http_proxies.txt",
-      "timestamp": "2025-06-13 10:00:44",
-      "status": "active"
-    },
-    {
-      "url": "https://raw.githubusercontent.com/ProxyScraper/ProxyScraper/refs/heads/main/http.txt",
       "timestamp": "2025-06-13 10:00:44",
       "status": "active"
     },
@@ -206,14 +196,29 @@
       "url": "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/https.txt",
       "timestamp": "2026-03-19 17:31:09",
       "status": "active"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt",
+      "timestamp": "2026-04-21 00:00:00",
+      "status": "active"
+    },
+    {
+      "url": "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&protocol=https",
+      "timestamp": "2026-04-21 00:00:00",
+      "status": "active"
+    },
+    {
+      "url": "https://www.proxy-list.download/api/v1/get?type=https",
+      "timestamp": "2026-04-21 00:00:00",
+      "status": "active"
+    },
+    {
+      "url": "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/https/data.txt",
+      "timestamp": "2026-04-21 00:00:00",
+      "status": "active"
     }
   ],
   "socks4": [
-    {
-      "url": "https://raw.githubusercontent.com/gitrecon1455/fresh-proxy-list/refs/heads/main/proxylist.txt",
-      "timestamp": "2025-06-13 10:02:25",
-      "status": "active"
-    },
     {
       "url": "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks4.txt",
       "timestamp": "2025-06-13 10:02:25",
@@ -328,6 +333,21 @@
       "url": "https://api.proxyscrape.com/v2/?request=getproxies&protocol=socks4&timeout=10000&country=all",
       "timestamp": "2026-04-09 15:05:00",
       "status": "active"
+    },
+    {
+      "url": "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&protocol=socks4",
+      "timestamp": "2026-04-21 00:00:00",
+      "status": "active"
+    },
+    {
+      "url": "https://www.proxy-list.download/api/v1/get?type=socks4",
+      "timestamp": "2026-04-21 00:00:00",
+      "status": "active"
+    },
+    {
+      "url": "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/socks4/data.txt",
+      "timestamp": "2026-04-21 00:00:00",
+      "status": "active"
     }
   ],
   "socks5": [
@@ -368,11 +388,6 @@
     },
     {
       "url": "https://raw.githubusercontent.com/TuanMinPay/live-proxy/refs/heads/master/socks5.txt",
-      "timestamp": "2025-06-13 09:56:56",
-      "status": "active"
-    },
-    {
-      "url": "https://raw.githubusercontent.com/dpangestuw/Free-Proxy/refs/heads/main/All_proxies.txt",
       "timestamp": "2025-06-13 09:56:56",
       "status": "active"
     },
@@ -512,6 +527,16 @@
       "status": "active"
     },
     {
+      "url": "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&protocol=socks5",
+      "timestamp": "2026-04-21 00:00:00",
+      "status": "active"
+    },
+    {
+      "url": "https://www.proxy-list.download/api/v1/get?type=socks5",
+      "timestamp": "2026-04-21 00:00:00",
+      "status": "active"
+    },
+    {
       "url": "https://raw.githubusercontent.com/casa-ls/proxy-list/main/socks5",
       "timestamp": "2026-04-16 12:00:00",
       "status": "active"
@@ -575,26 +600,6 @@
     },
     {
       "url": "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text",
-      "timestamp": "2025-06-13 08:27:40",
-      "status": "active"
-    },
-    {
-      "url": "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/http/data.txt",
-      "timestamp": "2025-06-13 08:27:40",
-      "status": "active"
-    },
-    {
-      "url": "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/https/data.txt",
-      "timestamp": "2025-06-13 08:27:40",
-      "status": "active"
-    },
-    {
-      "url": "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/socks4/data.txt",
-      "timestamp": "2025-06-13 08:27:40",
-      "status": "active"
-    },
-    {
-      "url": "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/socks5/data.txt",
       "timestamp": "2025-06-13 08:27:40",
       "status": "active"
     },

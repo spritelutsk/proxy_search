@@ -188,7 +188,7 @@ def download_free_proxy_list_net():
                 for filename in filenames:
                     filepath = os.path.join(proxy_in_dir, filename)
                     with open(filepath, 'a') as f:
-                        f.write('\n'.join(proxies))
+                        f.write('\n'.join(proxies) + '\n')
                     print(f"✓ Сохранено {len(proxies)} прокси в {filepath}")
             else:
                 print("⚠ Прокси не найдены в таблице")            
@@ -202,16 +202,35 @@ def download_free_proxy_list_net():
 
 
 
-def is_valid_proxy(proxy_str):
-    """Checks if the string is a valid proxy format IP:PORT"""
+def is_valid_proxy(proxy_str, protocol=None):
+    """Checks if the string is a valid proxy format IP:PORT.
+    If protocol is specified, validates that the port is appropriate for that protocol."""
     # Simple format check for IP:PORT
     proxy_pattern = re.compile(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})$')
-    if proxy_pattern.match(proxy_str):
+    match = proxy_pattern.match(proxy_str)
+    if match:
         # Check IP values (0-255) and port (1-65535)
         parts = proxy_str.split(':')
         ip_parts = parts[0].split('.')
-        if all(0 <= int(part) <= 255 for part in ip_parts) and 1 <= int(parts[1]) <= 65535:
-            return True
+        port = int(parts[1])
+        
+        if not (all(0 <= int(part) <= 255 for part in ip_parts) and 1 <= port <= 65535):
+            return False
+        
+        # Validate port based on protocol
+        if protocol:
+            if protocol == 'socks4' or protocol == 'socks5':
+                # SOCKS proxies typically use ports other than 80/443 (HTTP/HTTPS ports)
+                if port in [80, 443, 8080]:
+                    return False
+            elif protocol == 'http':
+                # HTTP proxies can use various ports, but 80/443 are common
+                pass
+            elif protocol == 'https':
+                # HTTPS proxies often use 443, 8080, etc.
+                pass
+        
+        return True
     return False
 
 
@@ -393,8 +412,8 @@ def download_and_process_mixed_proxy_lists(urls_mixed, output_dir):
     return successful, failed, total
 
 
-def remove_duplicates(directory):
-    """Removes duplicates in each file in the specified directory"""
+def remove_duplicates(directory, protocol=None):
+    """Removes duplicates in each file in the specified directory and filters by protocol if specified"""
     print("\nRemoving duplicates...")
     
     for file_name in os.listdir(directory):
@@ -402,6 +421,17 @@ def remove_duplicates(directory):
         
         if not os.path.isfile(file_path) or not file_name.endswith('.txt'):
             continue
+        
+        # Determine protocol from filename
+        file_protocol = None
+        if 'socks5' in file_name:
+            file_protocol = 'socks5'
+        elif 'socks4' in file_name:
+            file_protocol = 'socks4'
+        elif 'https' in file_name:
+            file_protocol = 'https'
+        elif 'http' in file_name:
+            file_protocol = 'http'
             
         try:
             with open(file_path, 'r') as file:
@@ -409,19 +439,22 @@ def remove_duplicates(directory):
                 
             original_count = len(lines)
             
-            # Remove duplicates while preserving order
+            # Remove duplicates while preserving order and filter by protocol
             unique_lines = []
             seen = set()
             
             for line in lines:
                 line = line.strip()
                 if line and line not in seen:
+                    # Filter by protocol if applicable
+                    if file_protocol and not is_valid_proxy(line, protocol=file_protocol):
+                        continue
                     seen.add(line)
                     unique_lines.append(line)
             
             # Write unique values back to file
             with open(file_path, 'w') as file:
-                file.write('\n'.join(unique_lines))
+                file.write('\n'.join(unique_lines) + '\n')
                 
             print(f"✓ {file_name}: removed {original_count - len(unique_lines)} duplicates, {len(unique_lines)} proxies remain")
             
@@ -559,6 +592,8 @@ def parse_freeproxylist_ru(max_pages=20, output_dir='proxy_in'):
                             proxies[proxy_type].append(proxy_str)
                         elif proxy_type == 'socks':  # иногда бывает просто "socks"
                             proxies['socks5'].append(proxy_str)
+                    else:
+                        print(f"⚠ Не удалось определить тип прокси для {ip}:{port}")
         except Exception as e:
             print(f"✗ Ошибка на странице {page}: {e}")
 
@@ -575,7 +610,7 @@ def parse_freeproxylist_ru(max_pages=20, output_dir='proxy_in'):
             all_unique = existing.union(proxy_list)
 
             with open(file_path, 'w') as f:
-                f.write('\n'.join(sorted(all_unique)))  # можно убрать sorted() если не нужно
+                f.write('\n'.join(sorted(all_unique)) + '\n')  # Добавлен завершающий символ новой строки
 
             print(f"✓ Сохранено {len(all_unique)} уникальных {proxy_type} прокси в {file_path}")
 
@@ -603,7 +638,7 @@ def download_proxies_by_protocol(urls_by_protocol, output_dir):
                 for line in response.text.splitlines():
                     clean_lines = clean_proxy_line(line)
                     for clean_line in clean_lines:
-                        if is_valid_proxy(clean_line):
+                        if is_valid_proxy(clean_line, protocol=protocol):
                             lines.append(clean_line)
                 if lines:
                     with open(file_path, 'a') as f:

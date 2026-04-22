@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Proxy List Downloader
+Downloads proxy lists from multiple sources and organizes them by protocol type.
+"""
+
 import sys
 import os
 import re
@@ -5,147 +12,157 @@ import time
 import json
 import requests
 from bs4 import BeautifulSoup
+from typing import Dict, List, Set, Tuple, Optional
+from pathlib import Path
+
 try:
     from pyfreeproxies import FreeProxies, UpdateAwareFreeProxies
 except ImportError:
     FreeProxies = None
     UpdateAwareFreeProxies = None
-# from pyfreeproxies import FreeProxies, UpdateAwareFreeProxies  # Раскомментируйте, если установите библиотеку pip install pyfreeproxies
 
-sys.stdout.reconfigure(encoding='utf-8')
+# Configure stdout for UTF-8 encoding
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
-otladka = False
-proxy_in_dir = "proxy_in"
-successful_downloads = 0
+# Configuration
+DEBUG_MODE = False
+PROXY_OUTPUT_DIR = "proxy_in"
+REQUEST_TIMEOUT = 15
+DEFAULT_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                  '(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'ru,en-US;q=0.9,en;q=0.8',
+}
 
 
-def safe_append_proxies(file_path, proxies):
-    """
-    Безопасно добавляет прокси в файл, гарантируя что каждый прокси на новой строке.
-    Исправляет проблему со склеиванием адресов при добавлении в существующий файл.
-    """
-    os.makedirs(os.path.dirname(file_path) or '.', exist_ok=True)
+class ProxyDownloader:
+    """Handles downloading and managing proxy lists from various sources."""
     
-    # Проверяем, существует ли файл и не заканчивается ли на \n
-    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-        with open(file_path, 'rb') as f:
-            f.seek(-1, 2)  # Go to end and read last byte
-            last_byte = f.read(1)
-            # Если файл не заканчивается на \n, добавляем его
-            if last_byte and last_byte != b'\n':
-                with open(file_path, 'ab') as af:
-                    af.write(b'\n')
+    def __init__(self, output_dir: str = PROXY_OUTPUT_DIR, debug: bool = DEBUG_MODE):
+        self.output_dir = Path(output_dir)
+        self.debug = debug
+        self.stats = {
+            'successful_downloads': 0,
+            'failed_downloads': 0,
+            'total_proxies': 0
+        }
+        self.output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Теперь безопасно добавляем прокси
-    with open(file_path, 'a', encoding='utf-8') as f:
-        if isinstance(proxies, (list, set)):
-            f.write('\n'.join(str(p) for p in proxies) + '\n')
-        else:
-            f.write(str(proxies) + '\n')
+    def save_proxies(self, file_path: Path, proxies: List[str]) -> None:
+        """
+        Safely appends proxies to a file, ensuring each proxy is on a new line.
+        
+        Args:
+            file_path: Path to the output file
+            proxies: List of proxy strings to save
+        """
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Ensure file ends with newline before appending
+        if file_path.exists() and file_path.stat().st_size > 0:
+            with open(file_path, 'rb') as f:
+                f.seek(-1, 2)
+                if f.read(1) != b'\n':
+                    with open(file_path, 'ab') as af:
+                        af.write(b'\n')
+        
+        # Append proxies
+        with open(file_path, 'a', encoding='utf-8') as f:
+            if isinstance(proxies, (list, set)):
+                f.write('\n'.join(str(p) for p in proxies) + '\n')
+            else:
+                f.write(f"{proxies}\n")
 
 
 
-def download_hidxxy_proxies():
-    """
-    Скачивает прокси с hidxxy.name/proxy-list и сохраняет в файлы по типам
-    """
-    if otladka:
-        return 0, 0, 0
-    # Словарь для хранения прокси по протоколам
-    proxies_by_protocol = {
-        'http': set(),
-        'https': set(), 
-        'socks4': set(),
-        'socks5': set()
-    }
+    def download_hidxxy_proxies(self) -> Tuple[int, int, int]:
+        """
+        Downloads proxies from hidxxy.name/proxy-list and saves to files by type.
+        
+        Returns:
+            Tuple of (pages_loaded, failed_count, total_saved)
+        """
+        if self.debug:
+            return 0, 0, 0
+        
+        proxies_by_protocol: Dict[str, Set[str]] = {
+            'http': set(),
+            'https': set(),
+            'socks4': set(),
+            'socks5': set()
+        }
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'ru,en-US;q=0.9,en;q=0.8',
-        'Referer': 'https://hidxxy.name/proxy-list/#list',
-    }
+        headers = DEFAULT_HEADERS.copy()
+        headers['Referer'] = 'https://hidxxy.name/proxy-list/#list'
 
-    domains = ['hidxxy.name', 'hixxxx.name']
-    session = requests.Session()
-    session.headers.update(headers)
+        domains = ['hidxxy.name', 'hixxxx.name']
+        session = requests.Session()
+        session.headers.update(headers)
 
-    pages_loaded = 0
+        pages_loaded = 0
 
-    # Скачиваем страницы пока не возникнет ошибка
-    for page in range(20):
-        start = page * 64
-        page_loaded = False
+        for page in range(20):
+            start = page * 64
+            page_loaded = False
 
-        for domain in domains:
-            url = f"https://{domain}/proxy-list/?start={start}#list" if start > 0 else f"https://{domain}/proxy-list/#list"
+            for domain in domains:
+                url = f"https://{domain}/proxy-list/?start={start}#list" if start > 0 else f"https://{domain}/proxy-list/#list"
 
-            try:
-                print(f"Загружается страница {url}")
-                response = session.get(url, timeout=15)
-                response.raise_for_status()
+                try:
+                    print(f"Loading page: {url}")
+                    response = session.get(url, timeout=REQUEST_TIMEOUT)
+                    response.raise_for_status()
 
-                soup = BeautifulSoup(response.text, 'html.parser')
-                table = soup.find('table', class_='table')
-                tbody = soup.find('tbody') or (table.find('tbody') if table else None)
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    table = soup.find('table', class_='table')
+                    tbody = soup.find('tbody') or (table.find('tbody') if table else None)
 
-                if not tbody:
-                    print(f"⚠ Таблица не найдена на странице {url}")
+                    if not tbody:
+                        print(f"⚠ Table not found on page {url}")
+                        continue
+
+                    rows_found = 0
+                    for row in tbody.find_all('tr'):
+                        cols = row.find_all('td')
+                        if len(cols) >= 5:
+                            ip = cols[0].text.strip()
+                            port = cols[1].text.strip()
+                            proxy_type = cols[4].text.strip().lower()
+
+                            if ip and port:
+                                proxy_str = f"{ip}:{port}"
+
+                                if proxy_type in proxies_by_protocol:
+                                    proxies_by_protocol[proxy_type].add(proxy_str)
+                                    rows_found += 1
+
+                    if rows_found == 0:
+                        print(f"⚠ No valid proxy rows found on page {url}")
+                        continue
+
+                    page_loaded = True
+                    pages_loaded += 1
+                    time.sleep(2)
+                    break
+
+                except Exception as e:
+                    print(f"✗ Error downloading {url}: {e}")
                     continue
 
-                rows_found = 0
-                for row in tbody.find_all('tr'):
-                    cols = row.find_all('td')
-                    if len(cols) >= 5:
-                        ip = cols[0].text.strip()
-                        port = cols[1].text.strip()
-                        proxy_type = cols[4].text.strip().lower()
-
-                        if ip and port:
-                            proxy_str = f"{ip}:{port}"
-
-                            # Определяем тип прокси и добавляем в соответствующий список
-                            if proxy_type == 'http':
-                                proxies_by_protocol['http'].add(proxy_str)
-                            elif proxy_type == 'https':
-                                proxies_by_protocol['https'].add(proxy_str)
-                            elif proxy_type == 'socks4':
-                                proxies_by_protocol['socks4'].add(proxy_str)
-                            elif proxy_type == 'socks5':
-                                proxies_by_protocol['socks5'].add(proxy_str)
-                            else:
-                                continue
-                            rows_found += 1
-
-                if rows_found == 0:
-                    print(f"⚠ На странице {url} не найдено подходящих строк прокси")
-                    continue
-
-                page_loaded = True
-                pages_loaded += 1
-                time.sleep(2)  # Небольшая задержка между запросами
+            if not page_loaded:
                 break
 
-            except Exception as e:
-                print(f"✗ Ошибка при скачивании {url}: {e}")
-                continue
+        total_saved = 0
+        for protocol, proxies in proxies_by_protocol.items():
+            if proxies:
+                filepath = self.output_dir / f"{protocol}.txt"
+                self.save_proxies(filepath, list(proxies))
+                print(f"✓ Saved {len(proxies)} {protocol} proxies to {filepath}")
+                total_saved += len(proxies)
 
-        if not page_loaded:
-            break
-
-    # Записываем в соответствующие файлы
-    total_saved = 0
-    for protocol, proxies in proxies_by_protocol.items():
-        if proxies:
-            filename = f"{protocol}.txt"
-            filepath = os.path.join(proxy_in_dir, filename)
-            safe_append_proxies(filepath, proxies)
-            print(f"✓ Сохранено {len(proxies)} {protocol} прокси в {filepath}")
-            total_saved += len(proxies)
-
-    if total_saved == 0:
-        return 0, 1, 0
-    return pages_loaded, 0, total_saved
+        return (pages_loaded, 0 if total_saved > 0 else 1, total_saved)
 
 
 def download_geonode_proxies():

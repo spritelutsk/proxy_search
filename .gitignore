@@ -1,17 +1,1 @@
-```
-# Dependencies
-__pycache__/
-*.pyc
-
-# Logs and temp files
-*.log
-*.tmp
-
-# Environment
-.env
-.env.local
-*.env.*
-
-# Stats output
-proxy_out/
-```
+Nothing should be ignored since only Python source files (.py) are being modified and no build artifacts, dependencies, or temporary files are present in the changes.

@@ -14,8 +14,8 @@
 
 ```
 ├── load_proxy_list_new.py      # Загрузчик списков прокси
-├── proxycheckerasync_add.py    # Асинхронный проверщик прокси
-├── proxycheckerasync_my_new_3.py  # Альтернативный проверщик прокси
+├── proxycheckerasync_add.py    # 
+├── proxycheckerasync_my_new_3.py  # Асинхронныйный проверщик прокси
 ├── URLs.json                   # Конфигурация источников прокси
 ├── first_run_for_debian.sh     # Скрипт первичной настройки для Debian/Ubuntu
 ├── a.sh                        # Вспомогательный скрипт
@@ -73,12 +73,6 @@ python3 load_proxy_list_new.py
 ### 2. Проверка прокси
 
 ```bash
-python3 proxycheckerasync_add.py
-```
-
-Или альтернативный проверщик:
-
-```bash
 python3 proxycheckerasync_my_new_3.py
 ```
 
@@ -108,7 +102,7 @@ python3 proxycheckerasync_my_new_3.py
 }
 ```
 
-### Настройки проверщика (proxycheckerasync_add.py)
+### Настройки проверщика (proxycheckerasync_my_new_3.py)
 
 - `CHECK_TIMEOUT` - таймаут проверки одного прокси (секунды)
 - `MAX_CONCURRENT_CHECKS` - максимальное количество одновременных проверок

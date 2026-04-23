@@ -1,168 +1,154 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Proxy List Downloader
-Downloads proxy lists from multiple sources and organizes them by protocol type.
-"""
-
 import sys
 import os
 import re
 import time
 import json
+import shutil
+import subprocess
 import requests
+from urllib.parse import urljoin
 from bs4 import BeautifulSoup
-from typing import Dict, List, Set, Tuple, Optional
-from pathlib import Path
-
 try:
     from pyfreeproxies import FreeProxies, UpdateAwareFreeProxies
 except ImportError:
     FreeProxies = None
     UpdateAwareFreeProxies = None
+# from pyfreeproxies import FreeProxies, UpdateAwareFreeProxies  # Раскомментируйте, если установите библиотеку pip install pyfreeproxies
 
-# Configure stdout for UTF-8 encoding
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+sys.stdout.reconfigure(encoding='utf-8')
 
-# Configuration
-DEBUG_MODE = False
-PROXY_OUTPUT_DIR = "proxy_in"
-REQUEST_TIMEOUT = 15
-DEFAULT_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                  '(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'ru,en-US;q=0.9,en;q=0.8',
-}
+otladka = False
+proxy_in_dir = "proxy_in"
+successful_downloads = 0
 
 
-class ProxyDownloader:
-    """Handles downloading and managing proxy lists from various sources."""
+def safe_append_proxies(file_path, proxies):
+    """
+    Безопасно добавляет прокси в файл, гарантируя что каждый прокси на новой строке.
+    Исправляет проблему со склеиванием адресов при добавлении в существующий файл.
+    """
+    os.makedirs(os.path.dirname(file_path) or '.', exist_ok=True)
     
-    def __init__(self, output_dir: str = PROXY_OUTPUT_DIR, debug: bool = DEBUG_MODE):
-        self.output_dir = Path(output_dir)
-        self.debug = debug
-        self.stats = {
-            'successful_downloads': 0,
-            'failed_downloads': 0,
-            'total_proxies': 0
-        }
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+    # Проверяем, существует ли файл и не заканчивается ли на \n
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        with open(file_path, 'rb') as f:
+            f.seek(-1, 2)  # Go to end and read last byte
+            last_byte = f.read(1)
+            # Если файл не заканчивается на \n, добавляем его
+            if last_byte and last_byte != b'\n':
+                with open(file_path, 'ab') as af:
+                    af.write(b'\n')
     
-    def save_proxies(self, file_path: Path, proxies: List[str]) -> None:
-        """
-        Safely appends proxies to a file, ensuring each proxy is on a new line.
-        
-        Args:
-            file_path: Path to the output file
-            proxies: List of proxy strings to save
-        """
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Ensure file ends with newline before appending
-        if file_path.exists() and file_path.stat().st_size > 0:
-            with open(file_path, 'rb') as f:
-                f.seek(-1, 2)
-                if f.read(1) != b'\n':
-                    with open(file_path, 'ab') as af:
-                        af.write(b'\n')
-        
-        # Append proxies
-        with open(file_path, 'a', encoding='utf-8') as f:
-            if isinstance(proxies, (list, set)):
-                f.write('\n'.join(str(p) for p in proxies) + '\n')
-            else:
-                f.write(f"{proxies}\n")
+    # Теперь безопасно добавляем прокси
+    with open(file_path, 'a', encoding='utf-8') as f:
+        if isinstance(proxies, (list, set)):
+            f.write('\n'.join(str(p) for p in proxies) + '\n')
+        else:
+            f.write(str(proxies) + '\n')
 
 
 
-    def download_hidxxy_proxies(self) -> Tuple[int, int, int]:
-        """
-        Downloads proxies from hidxxy.name/proxy-list and saves to files by type.
-        
-        Returns:
-            Tuple of (pages_loaded, failed_count, total_saved)
-        """
-        if self.debug:
-            return 0, 0, 0
-        
-        proxies_by_protocol: Dict[str, Set[str]] = {
-            'http': set(),
-            'https': set(),
-            'socks4': set(),
-            'socks5': set()
-        }
+def download_hidxxy_proxies():
+    """
+    Скачивает прокси с hidxxy.name/proxy-list и сохраняет в файлы по типам
+    """
+    if otladka:
+        return 0, 0, 0
+    # Словарь для хранения прокси по протоколам
+    proxies_by_protocol = {
+        'http': set(),
+        'https': set(), 
+        'socks4': set(),
+        'socks5': set()
+    }
 
-        headers = DEFAULT_HEADERS.copy()
-        headers['Referer'] = 'https://hidxxy.name/proxy-list/#list'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'ru,en-US;q=0.9,en;q=0.8',
+        'Referer': 'https://hidxxy.name/proxy-list/#list',
+    }
 
-        domains = ['hidxxy.name', 'hixxxx.name']
-        session = requests.Session()
-        session.headers.update(headers)
+    domains = ['hidxxy.name', 'hixxxx.name']
+    session = requests.Session()
+    session.headers.update(headers)
 
-        pages_loaded = 0
+    pages_loaded = 0
 
-        for page in range(20):
-            start = page * 64
-            page_loaded = False
+    # Скачиваем страницы пока не возникнет ошибка
+    for page in range(20):
+        start = page * 64
+        page_loaded = False
 
-            for domain in domains:
-                url = f"https://{domain}/proxy-list/?start={start}#list" if start > 0 else f"https://{domain}/proxy-list/#list"
+        for domain in domains:
+            url = f"https://{domain}/proxy-list/?start={start}#list" if start > 0 else f"https://{domain}/proxy-list/#list"
 
-                try:
-                    print(f"Loading page: {url}")
-                    response = session.get(url, timeout=REQUEST_TIMEOUT)
-                    response.raise_for_status()
+            try:
+                print(f"Загружается страница {url}")
+                response = session.get(url, timeout=15)
+                response.raise_for_status()
 
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    table = soup.find('table', class_='table')
-                    tbody = soup.find('tbody') or (table.find('tbody') if table else None)
+                soup = BeautifulSoup(response.text, 'html.parser')
+                table = soup.find('table', class_='table')
+                tbody = soup.find('tbody') or (table.find('tbody') if table else None)
 
-                    if not tbody:
-                        print(f"⚠ Table not found on page {url}")
-                        continue
-
-                    rows_found = 0
-                    for row in tbody.find_all('tr'):
-                        cols = row.find_all('td')
-                        if len(cols) >= 5:
-                            ip = cols[0].text.strip()
-                            port = cols[1].text.strip()
-                            proxy_type = cols[4].text.strip().lower()
-
-                            if ip and port:
-                                proxy_str = f"{ip}:{port}"
-
-                                if proxy_type in proxies_by_protocol:
-                                    proxies_by_protocol[proxy_type].add(proxy_str)
-                                    rows_found += 1
-
-                    if rows_found == 0:
-                        print(f"⚠ No valid proxy rows found on page {url}")
-                        continue
-
-                    page_loaded = True
-                    pages_loaded += 1
-                    time.sleep(2)
-                    break
-
-                except Exception as e:
-                    print(f"✗ Error downloading {url}: {e}")
+                if not tbody:
+                    print(f"⚠ Таблица не найдена на странице {url}")
                     continue
 
-            if not page_loaded:
+                rows_found = 0
+                for row in tbody.find_all('tr'):
+                    cols = row.find_all('td')
+                    if len(cols) >= 5:
+                        ip = cols[0].text.strip()
+                        port = cols[1].text.strip()
+                        proxy_type = cols[4].text.strip().lower()
+
+                        if ip and port:
+                            proxy_str = f"{ip}:{port}"
+
+                            # Определяем тип прокси и добавляем в соответствующий список
+                            if proxy_type == 'http':
+                                proxies_by_protocol['http'].add(proxy_str)
+                            elif proxy_type == 'https':
+                                proxies_by_protocol['https'].add(proxy_str)
+                            elif proxy_type == 'socks4':
+                                proxies_by_protocol['socks4'].add(proxy_str)
+                            elif proxy_type == 'socks5':
+                                proxies_by_protocol['socks5'].add(proxy_str)
+                            else:
+                                continue
+                            rows_found += 1
+
+                if rows_found == 0:
+                    print(f"⚠ На странице {url} не найдено подходящих строк прокси")
+                    continue
+
+                page_loaded = True
+                pages_loaded += 1
+                time.sleep(2)  # Небольшая задержка между запросами
                 break
 
-        total_saved = 0
-        for protocol, proxies in proxies_by_protocol.items():
-            if proxies:
-                filepath = self.output_dir / f"{protocol}.txt"
-                self.save_proxies(filepath, list(proxies))
-                print(f"✓ Saved {len(proxies)} {protocol} proxies to {filepath}")
-                total_saved += len(proxies)
+            except Exception as e:
+                print(f"✗ Ошибка при скачивании {url}: {e}")
+                continue
 
-        return (pages_loaded, 0 if total_saved > 0 else 1, total_saved)
+        if not page_loaded:
+            break
+
+    # Записываем в соответствующие файлы
+    total_saved = 0
+    for protocol, proxies in proxies_by_protocol.items():
+        if proxies:
+            filename = f"{protocol}.txt"
+            filepath = os.path.join(proxy_in_dir, filename)
+            safe_append_proxies(filepath, proxies)
+            print(f"✓ Сохранено {len(proxies)} {protocol} прокси в {filepath}")
+            total_saved += len(proxies)
+
+    if total_saved == 0:
+        return 0, 1, 0
+    return pages_loaded, 0, total_saved
 
 
 def download_geonode_proxies():
@@ -512,31 +498,72 @@ def parse_spys_script_vars(html):
     values = {}
     script_blocks = re.findall(r'<script[^>]*>(.*?)</script>', html, flags=re.DOTALL | re.IGNORECASE)
 
+    def unpack_eval_script(script):
+        """
+        Handles common SPYS packed form:
+        eval(function(p,r,o,x,y,s){...}('q=D^C;...',60,60,'...'.split('\\u005e'),0,{}))
+        """
+        packed_match = re.search(
+            r"\('(.+?)',\s*(\d+),\s*(\d+),\s*'(.+?)'\.split\('(?:\\u005e|\^)'\)",
+            script,
+            flags=re.DOTALL
+        )
+        if not packed_match:
+            return script
+
+        packed_code = packed_match.group(1)
+        radix = int(packed_match.group(2))
+        dictionary = packed_match.group(4).split('^')
+
+        def encode_index(num):
+            # Matches y() encoder from the packed script for c in range [0, radix)
+            if num < 10:
+                return str(num)
+            if num < 36:
+                return chr(ord('a') + num - 10)
+            return chr(num + 29)
+
+        decoded = packed_code
+        for idx in range(min(len(dictionary), radix) - 1, -1, -1):
+            token = encode_index(idx)
+            replacement = dictionary[idx]
+            decoded = re.sub(rf'\b{re.escape(token)}\b', replacement, decoded)
+
+        return decoded
+
+    def resolve_token(token):
+        token = token.strip()
+        if not token:
+            return None
+        if re.fullmatch(r'0[xX][0-9a-fA-F]+', token):
+            return int(token, 16)
+        if re.fullmatch(r'\d+', token):
+            return int(token)
+        return values.get(token)
+
     for script in script_blocks:
-        if 'document.write' not in script and '^' not in script:
-            continue
+        script = unpack_eval_script(script)
 
-        for statement in script.split(';'):
-            statement = statement.strip()
-            if '=' not in statement or 'document.write' in statement:
-                continue
-
-            name, expr = statement.split('=', 1)
-            name = name.strip()
-            expr = expr.strip()
-            if not re.match(r'^[A-Za-z0-9_]+$', name):
+        assignments = re.findall(
+            r'(?:^|[;\n])\s*(?:var|let)?\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;\n]+)',
+            script
+        )
+        for name, expr in assignments:
+            if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name):
                 continue
 
             try:
                 if '^' in expr:
                     left, right = (part.strip() for part in expr.split('^', 1))
-                    left_val = int(left) if left.isdigit() else values.get(left)
-                    right_val = int(right) if right.isdigit() else values.get(right)
+                    left_val = resolve_token(left)
+                    right_val = resolve_token(right)
                     if left_val is None or right_val is None:
                         continue
                     values[name] = left_val ^ right_val
-                elif expr.isdigit():
-                    values[name] = int(expr)
+                else:
+                    resolved = resolve_token(expr)
+                    if resolved is not None:
+                        values[name] = resolved
             except ValueError:
                 continue
 
@@ -545,23 +572,91 @@ def parse_spys_script_vars(html):
 
 def decode_spys_proxy(cell_html, script_vars):
     """Extracts IP:PORT from SPYS.ONE cell HTML."""
-    ip_match = re.search(r'>(\d{1,3}(?:\.\d{1,3}){3})<script', cell_html)
-    script_match = re.search(r'<script[^>]*>(.*?)</script>', cell_html, flags=re.DOTALL | re.IGNORECASE)
-    if not ip_match or not script_match:
+    ip_match = re.search(r'(\d{1,3}(?:\.\d{1,3}){3})', cell_html)
+    script_matches = re.findall(r'<script[^>]*>(.*?)</script>', cell_html, flags=re.DOTALL | re.IGNORECASE)
+    if not ip_match or not script_matches:
         return None
 
-    port_parts = re.findall(r'\(([A-Za-z0-9_]+\^[A-Za-z0-9_]+)\)', script_match.group(1))
+    script_code = ' '.join(script_matches)
+    port_parts = re.findall(r'\(\s*([A-Za-z0-9_]+)\s*\^\s*([A-Za-z0-9_]+)\s*\)', script_code)
+    if not port_parts:
+        # Иногда порт уже доступен как текст, если JS-обфускация отключена
+        plain_text = BeautifulSoup(cell_html, 'html.parser').get_text(' ', strip=True)
+        plain_port_match = re.search(r'\b(\d{2,5})\b', plain_text)
+        if plain_port_match:
+            proxy = f"{ip_match.group(1)}:{plain_port_match.group(1)}"
+            return proxy if is_valid_proxy(proxy) else None
+        return None
+
     port_digits = []
-    for part in port_parts:
-        left, right = (item.strip() for item in part.split('^', 1))
-        left_val = script_vars.get(left)
-        right_val = script_vars.get(right)
+
+    def resolve_part(token):
+        if re.fullmatch(r'0[xX][0-9a-fA-F]+', token):
+            return int(token, 16)
+        if token.isdigit():
+            return int(token)
+        return script_vars.get(token)
+
+    for left, right in port_parts:
+        left_val = resolve_part(left)
+        right_val = resolve_part(right)
         if left_val is None or right_val is None:
             return None
         port_digits.append(str(left_val ^ right_val))
 
     proxy = f"{ip_match.group(1)}:{''.join(port_digits)}"
     return proxy if is_valid_proxy(proxy) else None
+
+
+def decode_spys_ports_with_node(row_script_codes):
+    """Uses Node.js VM to evaluate row scripts and extract rendered ports."""
+    if not row_script_codes or shutil.which('node') is None:
+        return []
+
+    node_script = (
+        "const vm=require('vm');"
+        "const fs=require('fs');"
+        "const payload=JSON.parse(fs.readFileSync(0,'utf8'));"
+        "const out=[];"
+        "const createCtx=()=>{"
+        " const c={window:{},self:{},globalThis:{},__buf:''};"
+        " c.document={write:(s)=>{c.__buf+=String(s ?? '')}};"
+        " c.navigator={userAgent:'Mozilla/5.0'};"
+        " c.location={href:'https://spys.one/'};"
+        " c.screen={width:1920,height:1080};"
+        " c.history={length:1};"
+        " c.setTimeout=()=>0; c.clearTimeout=()=>{};"
+        " c.setInterval=()=>0; c.clearInterval=()=>{};"
+        " c.window=c; c.self=c; c.globalThis=c;"
+        " return c;"
+        "};"
+        "for(const row of payload.rows){"
+        " const context=createCtx();"
+        " vm.createContext(context);"
+        " for(const s of row.globalScripts){try{vm.runInContext(s,context)}catch(e){}}"
+        " context.__buf='';"
+        " try{vm.runInContext(row.rowScript,context)}catch(e){}"
+        " const m=(context.__buf||'').match(/(\\d{2,5})/);"
+        " out.push(m?m[1]:null);"
+        "}"
+        "process.stdout.write(JSON.stringify(out));"
+    )
+
+    payload = {'rows': row_script_codes}
+    try:
+        proc = subprocess.run(
+            ['node', '-e', node_script],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            timeout=20
+        )
+        if proc.returncode != 0 or not proc.stdout.strip():
+            return []
+        ports = json.loads(proc.stdout)
+        return ports if isinstance(ports, list) else []
+    except Exception:
+        return []
 
 
 def get_spys_protocol(type_text):
@@ -577,7 +672,170 @@ def get_spys_protocol(type_text):
     return None
 
 
+def collect_spys_proxies_from_html(html, proxies_by_protocol):
+    """Collects proxies from a SPYS.ONE HTML page into protocol buckets."""
+    script_vars = parse_spys_script_vars(html)
+    soup = BeautifulSoup(html, 'html.parser')
+
+    rows_found = 0
+    for row in soup.find_all('tr'):
+        cols = row.find_all('td')
+        if len(cols) < 9:
+            continue
+
+        first_cell_html = str(cols[0])
+        if 'document.write' not in first_cell_html:
+            continue
+
+        proxy = decode_spys_proxy(first_cell_html, script_vars)
+        protocol = get_spys_protocol(cols[1].get_text(' ', strip=True))
+        if not proxy or not protocol:
+            continue
+
+        proxies_by_protocol[protocol].add(proxy)
+        rows_found += 1
+
+    return rows_found
+
+
+def save_spys_proxies(output_dir, proxies_by_protocol, source_label):
+    total_saved = 0
+    for protocol, proxies in proxies_by_protocol.items():
+        if proxies:
+            file_path = os.path.join(output_dir, f"{protocol}.txt")
+            safe_append_proxies(file_path, proxies)
+            print(f"✓ Сохранено {len(proxies)} {protocol} прокси из {source_label} в {file_path}")
+            total_saved += len(proxies)
+    return total_saved
+
 def parse_spys_one(output_dir='proxy_in'):
+    if otladka:
+        return 0, 0, 0
+
+    # Важно: Spys требует правильные Cookie и Referer
+    session = requests.Session()
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*(/*;q=0.8',
+        'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
+        'Origin': 'https://spys.one',
+        'Referer': 'https://spys.one/en/free-proxy-list/',
+    }
+    
+    urls = [
+        'https://spys.one/en/free-proxy-list/',
+        'https://spys.one/en/socks-proxy-list/',
+        'https://spys.one/en/https-ssl-proxy/',
+    ]
+    
+    proxies_by_protocol = {'http': set(), 'https': set(), 'socks4': set(), 'socks5': set()}
+    successful_pages = 0
+    failed_pages = 0
+
+    for url in urls:
+        try:
+            print(f"Загружается Spys.one: {url}")
+            
+            # Первый запрос для получения начальных кук и переменных
+            response = session.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            initial_html = response.text
+            
+            # Извлекаем параметры для POST-запроса (чтобы получить больше прокси)
+            # xf0 - это обычно скрытый параметр формы на Spys
+            xf0_match = re.search(r'name="xf0" value="([^"]+)"', response.text)
+            payload = {
+                'xf0': xf0_match.group(1) if xf0_match else '',
+                'xpp': '3', # Параметр выбора количества (3 = 500 штук)
+                'xf1': '0'
+            }
+            
+            # Второй запрос (POST), имитирующий выбор "показать 500"
+            response = session.post(url, headers=headers, data=payload, timeout=15)
+            html_variants = [response.text]
+            if initial_html and initial_html != response.text:
+                html_variants.append(initial_html)
+
+            rows_found = 0
+            for html_variant in html_variants:
+                script_vars = parse_spys_script_vars(html_variant)
+                if not script_vars:
+                    print(f"⚠ Переменные JS не извлечены на {url}, пробуем парсить fallback-логикой")
+
+                soup = BeautifulSoup(html_variant, 'html.parser')
+                rows = soup.find_all('tr', class_=['spy1xx', 'spy1x'])
+                global_scripts = [
+                    code for code in re.findall(r'<script[^>]*>(.*?)</script>', html_variant, flags=re.DOTALL | re.IGNORECASE)
+                    if '^' in code or 'eval(function(p,r,o,x,y,s)' in code
+                ]
+                node_payload = []
+                for row in rows:
+                    cols = row.find_all('td')
+                    if len(cols) < 2:
+                        continue
+                    row_script_match = re.search(
+                        r'<script[^>]*>(.*?)</script>',
+                        str(cols[0]),
+                        flags=re.DOTALL | re.IGNORECASE
+                    )
+                    if not row_script_match:
+                        continue
+                    node_payload.append({
+                        'globalScripts': global_scripts,
+                        'rowScript': row_script_match.group(1)
+                    })
+                node_ports = decode_spys_ports_with_node(node_payload)
+                node_idx = 0
+
+                # Прокси на Spys обычно в строках с классом spy1xx или spy1x
+                for row in rows:
+                    cols = row.find_all('td')
+                    if len(cols) < 2:
+                        continue
+
+                    # Первая колонка содержит IP и скрипт порта
+                    first_cell_html = str(cols[0])
+                    proxy = decode_spys_proxy(first_cell_html, script_vars)
+                    if not proxy:
+                        ip_match = re.search(r'(\d{1,3}(?:\.\d{1,3}){3})', first_cell_html)
+                        if ip_match and node_idx < len(node_ports) and node_ports[node_idx]:
+                            candidate = f"{ip_match.group(1)}:{node_ports[node_idx]}"
+                            if is_valid_proxy(candidate):
+                                proxy = candidate
+                        if re.search(r'<script[^>]*>.*?</script>', first_cell_html, flags=re.DOTALL | re.IGNORECASE):
+                            node_idx += 1
+                    
+                    # Вторая колонка — тип прокси
+                    protocol_text = cols[1].get_text(strip=True)
+                    protocol = get_spys_protocol(protocol_text)
+                    
+                    if proxy and protocol:
+                        proxies_by_protocol[protocol].add(proxy)
+                        rows_found += 1
+
+            if rows_found:
+                print(f"✓ Найдено {rows_found} прокси на {url}")
+                successful_pages += 1
+            else:
+                failed_pages += 1
+
+        except Exception as e:
+            print(f"✗ Критическая ошибка Spys.one ({url}): {e}")
+            failed_pages += 1
+        
+        time.sleep(2) # Задержка, чтобы не забанили
+
+    # Сохранение результатов
+    total_saved = 0
+    for protocol, proxies in proxies_by_protocol.items():
+        if proxies:
+            file_path = os.path.join(output_dir, f"{protocol}.txt")
+            safe_append_proxies(file_path, proxies)
+            total_saved += len(proxies)
+
+    return successful_pages, failed_pages, total_saved
+
+def parse_spys_country_pages(output_dir='proxy_in', max_country_pages=12):
     if otladka:
         return 0, 0, 0
 
@@ -585,12 +843,7 @@ def parse_spys_one(output_dir='proxy_in'):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8'
     }
-    urls = [
-        'https://spys.one/en/free-proxy-list/',
-        'https://spys.one/en/http-proxy-list/',
-        'https://spys.one/en/https-ssl-proxy/',
-        'https://spys.one/en/socks-proxy-list/',
-    ]
+    index_url = 'https://spys.one/en/proxy-by-country/'
     proxies_by_protocol = {
         'http': set(),
         'https': set(),
@@ -598,54 +851,53 @@ def parse_spys_one(output_dir='proxy_in'):
         'socks5': set()
     }
 
+    try:
+        print(f"Загружается страница {index_url}")
+        response = requests.get(index_url, headers=headers, timeout=15)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"✗ Ошибка при загрузке {index_url}: {e}")
+        return 0, 1, 0
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    country_urls = []
+    seen = set()
+    for link in soup.find_all('a', href=True):
+        href = link['href']
+        if not re.match(r'^/free-proxy-list/[A-Z]{2}/$', href):
+            continue
+        full_url = urljoin(index_url, href)
+        if full_url in seen:
+            continue
+        seen.add(full_url)
+        country_urls.append(full_url)
+        if len(country_urls) >= max_country_pages:
+            break
+
+    if not country_urls:
+        print("⚠ На странице стран SPYS.ONE не найдены country links")
+        return 0, 1, 0
+
     successful_pages = 0
     failed_pages = 0
 
-    for url in urls:
+    for url in country_urls:
         try:
             print(f"Загружается страница {url}")
             response = requests.get(url, headers=headers, timeout=15)
             response.raise_for_status()
 
-            script_vars = parse_spys_script_vars(response.text)
-            soup = BeautifulSoup(response.text, 'html.parser')
-
-            rows_found = 0
-            for row in soup.find_all('tr'):
-                cols = row.find_all('td')
-                if len(cols) < 9:
-                    continue
-
-                first_cell_html = str(cols[0])
-                if 'document.write' not in first_cell_html:
-                    continue
-
-                proxy = decode_spys_proxy(first_cell_html, script_vars)
-                protocol = get_spys_protocol(cols[1].get_text(' ', strip=True))
-                if not proxy or not protocol:
-                    continue
-
-                proxies_by_protocol[protocol].add(proxy)
-                rows_found += 1
-
+            rows_found = collect_spys_proxies_from_html(response.text, proxies_by_protocol)
             if rows_found:
                 successful_pages += 1
             else:
                 print(f"⚠ На странице {url} не найдено прокси")
                 failed_pages += 1
-
         except Exception as e:
             print(f"✗ Ошибка при парсинге {url}: {e}")
             failed_pages += 1
 
-    total_saved = 0
-    for protocol, proxies in proxies_by_protocol.items():
-        if proxies:
-            file_path = os.path.join(output_dir, f"{protocol}.txt")
-            safe_append_proxies(file_path, proxies)
-            print(f"✓ Сохранено {len(proxies)} {protocol} прокси из SPYS.ONE в {file_path}")
-            total_saved += len(proxies)
-
+    total_saved = save_spys_proxies(output_dir, proxies_by_protocol, "SPYS.ONE country pages")
     return successful_pages, failed_pages, total_saved
 
 
@@ -919,6 +1171,12 @@ def main():
     failed_downloads += spys_failed
     total_proxies += spys_total
 
+    print("\n===== Шаг 9: Парсинг country pages на SPYS.ONE =====")
+    spys_country_successful, spys_country_failed, spys_country_total = parse_spys_country_pages(output_dir=output_dir)
+    successful_downloads += spys_country_successful
+    failed_downloads += spys_country_failed
+    total_proxies += spys_country_total
+
     # Print final statistics
     elapsed_time = time.time() - start_time
     print(f"\n===== Итоговая статистика =====")
@@ -927,7 +1185,7 @@ def main():
     print(f"Общее время выполнения: {elapsed_time:.2f} секунд")
     print("Примечание: итоговое количество прокси может измениться после удаления дубликатов")
 
-    # Step 9: Remove duplicates
+    # Step 10: Remove duplicates
     print("\n===== Шаг 9: Удаление дубликатов =====")
     remove_duplicates(output_dir)
 

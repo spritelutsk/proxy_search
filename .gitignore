@@ -1,1 +1,1 @@
-Nothing should be ignored since only Python source files (.py) are being modified and no build artifacts, dependencies, or temporary files are present in the changes.
+Nothing needs to be added to .gitignore since only a README.md file was added, which is a source/config file and not a build artifact, dependency, or temporary file.
